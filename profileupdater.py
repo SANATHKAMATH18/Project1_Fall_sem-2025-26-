@@ -54,7 +54,7 @@ Example Output:
     return profile_update
 
 
-print(get_profile_update("I love the song Imagine by John Lennon.","That's a great song! It really promotes peace and unity."))
+
 
 
 
