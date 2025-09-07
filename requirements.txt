@@ -9,3 +9,5 @@ langfuse
 IPython
 streamlit
 requests
+pymongo
+langchain_mongodb
