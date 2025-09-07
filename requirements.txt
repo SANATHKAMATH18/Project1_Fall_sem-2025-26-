@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+langchain_google_genai
+langgraph
+trustcall
+langchain_core
+python-dotenv
+langfuse
+IPython
+streamlit
+requests
