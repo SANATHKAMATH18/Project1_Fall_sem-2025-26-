@@ -1,2 +1,15 @@
 .env
+
+# Environments
+myenv/
+venv/
+
+# Secrets
+secrets.env
+
+# Dependencies / Submodules
+langfuse/
+
+# Python
 __pycache__/
+.ipynb_checkpoints/
