@@ -51,7 +51,7 @@ vectorstore = MongoDBAtlasVectorSearch.from_connection_string(
 
 # Retriever memory with filter for user_id
 retriever = vectorstore.as_retriever(
-    search_kwargs={"k": 5},
+    search_kwargs={"k": 3},
     search_filter={"user_id": USER_ID}
 )
 long_term_memory = VectorStoreRetrieverMemory(
@@ -112,7 +112,7 @@ Conversation:
 Human: {input}
 AI: {response}
 
-Output in JSON:
+Output in JSON of the form(example):
 {{
   "summary": "The user mentioned his son Arjun who committed suicide."
 }}
@@ -144,7 +144,8 @@ while True:
     
 
     try:
-        extracted_json = json.loads(extracted)
+        extract_json_str = extract_json(extracted)
+        extracted_json = json.loads(extract_json_str)
         #update_json = json.loads(profile_update)
         #print("all ok")
         
