@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>mAIstro Voice Client</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; }
+    #log { max-width: 720px; white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; height: 300px; overflow:auto; }
+    button { padding: 8px 12px; margin-right: 8px;}
+    .user { color: blue; }
+    .assistant { color: green; }
+  </style>
+</head>
+<body>
+  <h2>mAIstro — Voice Client</h2>
+  <div>
+    <label>Username: <input id="user" value="sanath"/></label>
+    <label style="margin-left:12px">Thread: <input id="thread" value="default"/></label>
+  </div>
+  <p>
+    <button id="startBtn">🎤 Start Recognition</button>
+    <button id="stopBtn" disabled>⏹ Stop</button>
+  </p>
+
+  <div id="status">Status: disconnected</div>
+  <div id="log"></div>
+
+<script>
+const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+let ws;
+const logEl = document.getElementById('log');
+const status = document.getElementById('status');
+const userIdEl = document.getElementById('user');
+const threadEl = document.getElementById('thread');
+
+function log(s, cls="") {
+  const div = document.createElement("div");
+  if (cls) div.className = cls;
+  div.textContent = s;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function ensureWs() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => { status.textContent = 'Status: connected'; log('✅ Connected to server'); }
+  ws.onmessage = (evt) => {
+    const data = JSON.parse(evt.data);
+    if (data.type === 'assistant') {
+      log('Assistant: ' + data.content, "assistant");
+      speak(data.content);
+    } else {
+      log('recv: ' + evt.data);
+    }
+  }
+  ws.onclose = () => { status.textContent = 'Status: disconnected'; log('⚠️ Disconnected'); }
+  ws.onerror = (e) => { log('ws error: ' + e); }
+}
+
+function sendTranscript(text) {
+  ensureWs();
+  const payload = { type: "transcript", thread_id: threadEl.value, user_id: userIdEl.value, transcript: text };
+  ws.send(JSON.stringify(payload));
+  log('You: ' + text, "user");
+}
+
+// TTS using browser
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter);
+}
+
+/* Speech Recognition setup */
+let recognition;
+if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+  log('🚫 No Web Speech API support. Use Chrome/Edge.');
+} else {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = true;
+  recognition.continuous = true;
+
+  recognition.onresult = (ev) => {
+    let interim = '', final = '';
+    for (let i = ev.resultIndex; i < ev.results.length; ++i) {
+      const r = ev.results[i];
+      if (r.isFinal) final += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    if (final.trim()) {
+      sendTranscript(final.trim());
+    } else if (interim.trim()) {
+      status.textContent = 'Interim: ' + interim;
+    }
+  };
+
+  recognition.onerror = (e) => { log('rec error: ' + e.error); }
+}
+
+/* UI */
+document.getElementById('startBtn').onclick = () => {
+  ensureWs();
+  if (recognition) recognition.start();
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+}
+document.getElementById('stopBtn').onclick = () => {
+  if (recognition) recognition.stop();
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+}
+</script>
+</body>
+</html>
