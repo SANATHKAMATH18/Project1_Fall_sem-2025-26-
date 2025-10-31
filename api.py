@@ -7,6 +7,22 @@ from pydantic import BaseModel, Field
 import os
 from dotenv import load_dotenv
 
+# --- Imports for In-Memory Storage ---
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.memory import InMemoryStore
+# ---
+
+from typing import TypedDict, Literal, List, Optional
+import uuid
+from datetime import datetime
+
+from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import merge_message_runs
+from langgraph.graph import StateGraph, MessagesState, END, START
+from langgraph.store.base import BaseStore
+from fastapi import FastAPI, HTTPException
+
+
 langfuse = Langfuse(
     public_key="pk-lf-23e53af4-ebcf-40b4-ab28-3f3bc07a0280",
     secret_key="sk-lf-9eab0060-d2a1-43ee-9cec-60192043d47d",
@@ -20,9 +36,7 @@ load_dotenv("secrets.env")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 
 """## Visibility into Trustcall updates
-
 Trustcall creates and updates JSON schemas.
-
 """
 
 
@@ -119,7 +133,11 @@ schema_name = "Memory"
 changes = extract_tool_info(spy.called_tools, schema_name)
 print(changes)
 
-from typing import TypedDict, Literal
+
+# --- Added GetToDoReport tool definition ---
+class GetToDoReport(TypedDict):
+    """ Call this to get a summary report of all current to-do tasks. """
+    pass # No arguments needed
 
 # Update memory tool
 class UpdateMemory(TypedDict):
@@ -127,32 +145,7 @@ class UpdateMemory(TypedDict):
     update_type: Literal['user', 'todo', 'instructions']
 
 """## Graph definition
-
-We add a simple router, `route_message`, that makes a binary decision to save memories.
-
-The memory collection updating is handled by `Trustcall` in the `write_memory` node, as before!
 """
-
-import uuid
-from IPython.display import Image, display
-
-from datetime import datetime
-from trustcall import create_extractor
-from typing import Optional
-from pydantic import BaseModel, Field
-
-from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import merge_message_runs, HumanMessage, SystemMessage
-
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, MessagesState, END, START
-from langgraph.store.base import BaseStore
-from langgraph.store.memory import InMemoryStore
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-# Initialize the model
-model = ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0)
 
 # User profile schema
 class Profile(BaseModel):
@@ -194,6 +187,7 @@ profile_extractor = create_extractor(
     tool_choice="Profile",
 )
 
+# --- Updated system message with reporting instruction ---
 # Chatbot instruction for choosing what to update and what tools to call
 MODEL_SYSTEM_MESSAGE = """You are a helpful chatbot.
 
@@ -235,7 +229,9 @@ Here are your instructions for reasoning about the user's messages:
 
 4. Err on the side of updating the todo list. No need to ask for explicit permission.
 
-5. Respond naturally to user user after a tool call was made to save memories, or if no tool call was made."""
+5. If the user asks for a summary, report, or a list of all their tasks, call the GetToDoReport tool.
+
+6. Respond naturally to user user after a tool call was made to save memories, or if no tool call was made."""
 
 # Trustcall instruction
 TRUSTCALL_INSTRUCTION = """Reflect on following interaction.
@@ -291,7 +287,11 @@ def task_mAIstro(state: MessagesState, config: RunnableConfig, store: BaseStore)
     system_msg = MODEL_SYSTEM_MESSAGE.format(user_profile=user_profile, todo=todo, instructions=instructions)
 
     # Respond using memory as well as the chat history
-    response = model.bind_tools([UpdateMemory], parallel_tool_calls=False).invoke([SystemMessage(content=system_msg)]+state["messages"])
+    # --- Added GetToDoReport to the list of tools ---
+    response = model.bind_tools(
+        [UpdateMemory, GetToDoReport], 
+        parallel_tool_calls=False
+    ).invoke([SystemMessage(content=system_msg)]+state["messages"])
 
     return {"messages": [response]}
 
@@ -408,23 +408,79 @@ def update_instructions(state: MessagesState, config: RunnableConfig, store: Bas
     tool_calls = state['messages'][-1].tool_calls
     return {"messages": [{"role": "tool", "content": "updated instructions", "tool_call_id":tool_calls[0]['id']}]}
 
-# Conditional edge
-def route_message(state: MessagesState, config: RunnableConfig, store: BaseStore) -> Literal[END, "update_todos", "update_instructions", "update_profile"]:
-
-    """Reflect on the memories and chat history to decide whether to update the memory collection."""
-    message = state['messages'][-1]
-    if len(message.tool_calls) ==0:
-        return END
+# --- Node function to get the ToDo report ---
+def get_report(state: MessagesState, config: RunnableConfig, store: BaseStore):
+    """Fetches all to-do items and formats them into a report."""
+    
+    print("--- FETCHING TO-DO REPORT ---") # For debugging
+    
+    user_id = config["configurable"]["user_id"]
+    namespace = ("todo", user_id)
+    
+    # Search for all memories in the 'todo' namespace for this user
+    memories = store.search(namespace)
+    
+    if not memories:
+        report = "You have no tasks in your ToDo list."
     else:
-        tool_call = message.tool_calls[0]
-        if tool_call['args']['update_type'] == "user":
+        report_lines = ["Here is your ToDo report:"]
+        for i, mem in enumerate(memories):
+            task = mem.value # This is the dict (JSON) from the store
+            
+            # Safely get values from the task dictionary
+            task_name = task.get('task', 'Untitled Task')
+            status = task.get('status', 'not started')
+            deadline = task.get('deadline', None)
+            solutions = task.get('solutions', [])
+
+            report_lines.append(f"\nTask {i+1}: {task_name}")
+            report_lines.append(f"  - Status: {status}")
+            
+            if deadline:
+                report_lines.append(f"  - Deadline: {deadline}")
+            if solutions:
+                report_lines.append(f"  - Solutions: {', '.join(solutions)}")
+                
+        report = "\n".join(report_lines)
+    
+    # Get the tool call ID from the last (AIMessage)
+    tool_call_id = state['messages'][-1].tool_calls[0]['id']
+    
+    # Return the report as a ToolMessage
+    return {"messages": [{"role": "tool", "content": report, "tool_call_id": tool_call_id}]}
+
+
+# --- Updated conditional router ---
+# Conditional edge
+def route_message(state: MessagesState, config: RunnableConfig, store: BaseStore) -> Literal[END, "update_todos", "update_instructions", "update_profile", "get_report"]:
+
+    """Reflect on the memories and chat history to decide which node to call next."""
+    message = state['messages'][-1]
+    
+    if not message.tool_calls:
+        return END
+    
+    # Get the first tool call
+    tool_call = message.tool_calls[0]
+    
+    if tool_call['name'] == "UpdateMemory":
+        args = tool_call['args']
+        if args['update_type'] == "user":
             return "update_profile"
-        elif tool_call['args']['update_type'] == "todo":
+        elif args['update_type'] == "todo":
             return "update_todos"
-        elif tool_call['args']['update_type'] == "instructions":
+        elif args['update_type'] == "instructions":
             return "update_instructions"
         else:
-            raise ValueError
+            raise ValueError("Unknown UpdateMemory type")
+    
+    # Route to the new get_report node
+    elif tool_call['name'] == "GetToDoReport":
+        return "get_report"
+
+    else:
+        # If no recognized tool, end
+        return END
 
 # Create the graph + all nodes
 builder = StateGraph(MessagesState)
@@ -434,12 +490,16 @@ builder.add_node(task_mAIstro)
 builder.add_node(update_todos)
 builder.add_node(update_profile)
 builder.add_node(update_instructions)
+builder.add_node(get_report) # --- Add the report node ---
+
 builder.add_edge(START, "task_mAIstro")
 builder.add_conditional_edges("task_mAIstro", route_message)
 builder.add_edge("update_todos", "task_mAIstro")
 builder.add_edge("update_profile", "task_mAIstro")
 builder.add_edge("update_instructions", "task_mAIstro")
+builder.add_edge("get_report", "task_mAIstro") # --- Add edge from report back to main ---
 
+# --- Reverted to In-Memory Storage ---
 # Store for long-term (across-thread) memory
 across_thread_memory = InMemoryStore()
 
@@ -448,14 +508,14 @@ within_thread_memory = MemorySaver()
 
 # We compile the graph with the checkpointer and store
 graph = builder.compile(checkpointer=within_thread_memory, store=across_thread_memory)
+# ---
 
 
 config = {"configurable": {"thread_id": "1", "user_id": "sanath"},
          "callbacks": [langfuse_handler]}
 
 
-from fastapi import FastAPI, HTTPException
-from typing import List
+# --- FastAPI App Definition ---
 
 class Message(BaseModel):
     role: str
@@ -490,16 +550,19 @@ async def chat(request: ChatState):
 @app.get("/memory/{user_id}")
 async def get_memory(user_id: str):
     try:
+        # --- Use the in-memory 'across_thread_memory' store ---
+        store = across_thread_memory
+        
         profile_namespace = ("profile", user_id)
-        profile_memories = across_thread_memory.search(profile_namespace)
+        profile_memories = store.search(profile_namespace)
         profile = [mem.value for mem in profile_memories]
 
         todo_namespace = ("todo", user_id)
-        todo_memories = across_thread_memory.search(todo_namespace)
+        todo_memories = store.search(todo_namespace)
         todos = [mem.value for mem in todo_memories]
 
         instructions_namespace = ("instructions", user_id)
-        instructions_memories = across_thread_memory.search(instructions_namespace)
+        instructions_memories = store.search(instructions_namespace)
         instructions = [mem.value for mem in instructions_memories]
 
         return {

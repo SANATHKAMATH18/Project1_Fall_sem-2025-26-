@@ -53,7 +53,7 @@ class Spy:
 spy = Spy()
 
 # Initialize the model
-model = ChatGoogleGenerativeAI(model="gemini-2.5-pro",temperature=0)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash",temperature=0)
 
 # Create the extractor
 trustcall_extractor = create_extractor(
@@ -152,7 +152,7 @@ from langgraph.store.memory import InMemoryStore
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Initialize the model
-model = ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 # User profile schema
 class Profile(BaseModel):

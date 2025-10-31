@@ -24,6 +24,9 @@ if st.session_state.user_id is None:
 else:
     # --- Sidebar for Threads ---
     st.sidebar.header(f"Welcome, {st.session_state.user_id}")
+    
+    # --- Logout button was moved from here ---
+
     if st.sidebar.button("New Chat"):
         thread_id = str(uuid.uuid4())
         st.session_state.threads[thread_id] = []
@@ -31,8 +34,18 @@ else:
 
     st.sidebar.header("Chat Threads")
     for thread_id in st.session_state.threads:
-        if st.sidebar.button(f"Chat {thread_id[:8]}"):
+        if st.sidebar.button(f"Chat {thread_id[:8]}", key=f"chat_{thread_id}"): # Added key
             st.session_state.active_thread = thread_id
+
+    # --- START OF MOVED LOGOUT BUTTON ---
+    # This is now the last item in the sidebar, so it appears at the bottom.
+    st.sidebar.markdown("---") # Visual separator
+    if st.sidebar.button("Logout"):
+        st.session_state.user_id = None
+        st.session_state.threads = {}
+        st.session_state.active_thread = None
+        st.rerun()
+    # --- END OF MOVED LOGOUT BUTTON ---
 
     # --- Chat Interface ---
     if st.session_state.active_thread:
@@ -55,6 +68,7 @@ else:
                 try:
                     with sr.Microphone() as source:
                         st.info("Please speak now...")
+                        r.adjust_for_ambient_noise(source, duration=0.5)
                         audio = r.listen(source, timeout=10)
                     
                     voice_text = r.recognize_google(audio)
@@ -79,7 +93,7 @@ else:
             payload = {
                 "thread_id": st.session_state.active_thread,
                 "user_id": st.session_state.user_id,
-                "messages": [{"role": "user", "content": prompt}]
+                "messages": [{"role": "user", "content": prompt}] # Backend graph handles history
             }
 
             # Send request to the FastAPI backend
