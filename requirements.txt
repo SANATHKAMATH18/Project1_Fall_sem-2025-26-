@@ -9,3 +9,8 @@ langfuse
 IPython
 streamlit
 requests
+streamlit-webrtc 
+SpeechRecognition 
+PyAudio 
+gTTS 
+pydub
