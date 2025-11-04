@@ -1,6 +1,4 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
-import speech_recognition as sr
 import requests
 import uuid
 
@@ -63,24 +61,7 @@ else:
             prompt = st.chat_input("What is up?")
         
         with col2:
-            if st.button("🎙️", key="voice_button", help="Click to record voice"):
-                r = sr.Recognizer()
-                try:
-                    with sr.Microphone() as source:
-                        st.info("Please speak now...")
-                        r.adjust_for_ambient_noise(source, duration=0.5)
-                        audio = r.listen(source, timeout=10)
-                    
-                    voice_text = r.recognize_google(audio)
-                    st.success(f"Recognized: {voice_text}")
-                    prompt = voice_text
-                    
-                except sr.UnknownValueError:
-                    st.error("Could not understand audio. Please try again.")
-                except sr.RequestError as e:
-                    st.error(f"Error with speech recognition: {e}")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+            pass
 
         # Handle prompt (from both text and voice input)
         if prompt:
