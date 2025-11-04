@@ -79,7 +79,7 @@ else:
 
             # Send request to the FastAPI backend
             try:
-                response = requests.post("http://localhost:8000/chat", json=payload)
+                response = requests.post("https://voice-agent-api-w4te.onrender.com/chat", json=payload)
                 response.raise_for_status()
                 
                 response_data = response.json()
