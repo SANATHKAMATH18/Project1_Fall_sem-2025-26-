@@ -10,13 +10,3 @@ langchain_core
 python-dotenv
 requests==2.32.3
 ipython==8.37.0
-SpeechRecognition==3.14.3
-PyAudio==0.2.14
-gTTS==2.5.4
-pydub==0.25.1
-streamlit-webrtc==0.63.11
-sounddevice==0.5.1
-streamlit-audiorecorder==0.0.6
-av==16.0.1
-aiohttp==3.12.15
-aiortc==1.14.0
