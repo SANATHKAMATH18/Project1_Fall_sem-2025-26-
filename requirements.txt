@@ -1,6 +1,7 @@
 fastapi==0.116.1
 uvicorn==0.35.0
 streamlit==1.49.1
+langchain
 langchain-core==0.3.75
 langchain-google-genai==2.1.10
 langgraph==0.6.7
